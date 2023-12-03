@@ -6,6 +6,7 @@ import (
 	"os"
 
 	scraper "github.com/jon-yin/RecipeScraper"
+	"github.com/jon-yin/RecipeScraper/exporters"
 )
 
 func main() {
@@ -14,27 +15,19 @@ func main() {
 		fmt.Println("Error", err)
 		os.Exit(1)
 	}
-	recipesLinks, err := s.ScrapeRecipeLinksFromIndex(context.TODO(), "https://www.recipetineats.com/recipes")
+	recipes, err := s.ScrapeRecipe(context.TODO(), "https://www.recipetineats.com/recipes")
 	if err != nil {
 		fmt.Println("Error", err)
 		os.Exit(1)
 	}
-	printLinks, err := s.ScrapeRecipePrintLinks(context.TODO(), recipesLinks)
+	exporter, err := exporters.NewHtmlExporter()
 	if err != nil {
 		fmt.Println("Error", err)
 		os.Exit(1)
 	}
-	recipes, err := s.ScrapeRecipeInfoFromPrintLinks(context.TODO(), printLinks)
+	err = exporter.ExportRecipesToFile("./recipe-index.html", recipes)
 	if err != nil {
 		fmt.Println("Error", err)
 		os.Exit(1)
 	}
-	fmt.Println("Number of recipes", len(recipes))
-	fmt.Println("First recipe", recipes[0])
-	// printLinks, err := scraper.ScrapePrintLinks(context.TODO(), recipes)
-	// if err != nil {
-	// 	fmt.Println("Error", err)
-	// 	os.Exit(1)
-	// }
-	// fmt.Println("Print links", printLinks)
 }

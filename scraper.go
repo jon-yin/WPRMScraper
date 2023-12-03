@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/gocolly/colly/v2/debug"
 )
 
 const (
@@ -63,12 +62,14 @@ type Scraper struct {
 }
 
 type Recipe struct {
-	Rating   float64  // User rating
-	NumRated int      // Number of user ratings
-	Name     string   // Recipe name
-	Cuisine  []string // Cuisine tags
-	Course   []string // Course tags
-	Keywords []string // Keyword tags
+	Rating      float64  // User rating
+	NumRated    int      // Number of user ratings
+	Name        string   // Recipe name
+	Link        string   // URL to the print page
+	Cuisine     []string // Cuisine tags
+	Course      []string // Course tags
+	Keywords    []string // Keyword tags
+	Ingredients []string // Recipe ingredients
 }
 
 func New(options ...ScraperOption) (*Scraper, error) {
@@ -86,111 +87,25 @@ func New(options ...ScraperOption) (*Scraper, error) {
 	return scraper, nil
 }
 
-func (s *Scraper) createScraper() *colly.Collector {
-	c := colly.NewCollector(colly.Debugger(&debug.LogDebugger{}),
-		colly.UserAgent(userAgent),
-		colly.Async())
-	c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: s.Parallelism,
-	})
+func (s *Scraper) createScraper(parallel bool) *colly.Collector {
+	c := colly.NewCollector(
+		colly.UserAgent(userAgent))
+	if parallel {
+		c.Async = true
+		c.Limit(&colly.LimitRule{
+			DomainGlob:  "*",
+			Parallelism: s.Parallelism,
+		})
+	}
 	return c
 }
 
-func (s *Scraper) validate() error {
-	if s.MaxPages < 1 {
-		return errors.New("max pages cannot be less than 1")
-	}
-	if s.MaxRecipes < 1 {
-		return errors.New("max recipes cannot be less than 1")
-	}
-	if s.Parallelism < 1 {
-		return errors.New("parallelism cannot be less than 1")
-	}
-	return nil
-}
-
-func (s *Scraper) scrapeInParallel(ctx context.Context, c *colly.Collector, urls []string) error {
-outerLoop:
-	for i := 0; i < len(urls); {
-		for j := 0; j < s.Parallelism; j++ {
-			select {
-			case <-ctx.Done():
-				break outerLoop
-			default:
-			}
-			if i == len(urls) {
-				break outerLoop
-			}
-			c.Visit(urls[i])
-			i++
-		}
-		c.Wait()
-	}
-	c.Wait()
-	return ctx.Err()
-}
-
-func (s *Scraper) ScrapeRecipeLinksFromIndex(ctx context.Context, u string) ([]string, error) {
+func (s *Scraper) ScrapeRecipeLink(ctx context.Context, u string) (Recipe, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	var recipes []string
+	var recipe Recipe
 	var err error
-	defer cancel()
-	c := s.createScraper()
-	var recipeMutex sync.Mutex
-	c.OnRequest(abortRequestHook(ctx))
-	c.OnHTML("html body", func(h *colly.HTMLElement) {
-		if len(h.DOM.Find("article").Nodes) == 0 {
-			cancel()
-			return
-		}
-		h.ForEachWithBreak("article", func(i int, h *colly.HTMLElement) bool {
-			recipeLink := h.ChildAttr("a", "href")
-			recipeMutex.Lock()
-			defer recipeMutex.Unlock()
-			if len(recipes) == s.MaxRecipes {
-				cancel()
-				return false
-			}
-			recipes = append(recipes, recipeLink)
-			return true
-		})
-	})
-	c.OnError(func(r *colly.Response, err2 error) {
-		err = err2
-		cancel()
-	})
-	u = strings.TrimSuffix(u, "/")
-outerLoop:
-	for i := 0; i < s.MaxPages; {
-		for j := 0; j < s.Parallelism; j++ {
-			if i == s.MaxPages-1 {
-				break outerLoop
-			}
-			select {
-			case <-ctx.Done():
-				break outerLoop
-			default:
-				c.Visit(fmt.Sprintf("%s/page/%d", u, i+1))
-			}
-			i++
-		}
-		c.Wait()
-	}
-	c.Wait()
-	if err != nil {
-		return nil, err
-	}
-	return recipes, nil
-}
-
-func (s *Scraper) ScrapeRecipePrintLinks(ctx context.Context, urls []string) ([]string, error) {
-	var err error
-	var mutex sync.Mutex
-	ctx, cancel := context.WithCancel(ctx)
-	recipePrintLinks := make([]string, 0, len(urls))
-	c := colly.NewCollector(colly.Debugger(&debug.LogDebugger{}),
-		colly.UserAgent(userAgent))
+	c := s.createScraper(false)
+	printScraper := c.Clone()
 	c.OnRequest(abortRequestHook(ctx))
 	c.OnHTML("a.wprm-recipe-print", func(h *colly.HTMLElement) {
 		select {
@@ -198,30 +113,16 @@ func (s *Scraper) ScrapeRecipePrintLinks(ctx context.Context, urls []string) ([]
 			return
 		default:
 		}
-		mutex.Lock()
-		defer mutex.Unlock()
-		recipePrintLinks = append(recipePrintLinks, h.Attr("href"))
+		recipeLink := h.Attr("href")
+		printScraper.Visit(recipeLink)
 	})
 	c.OnError(func(r *colly.Response, err2 error) {
 		err = err2
 		cancel()
 	})
-	_ = s.scrapeInParallel(ctx, c, urls)
-	if err != nil {
-		return nil, err
-	}
-	return recipePrintLinks, nil
-}
 
-func (s *Scraper) ScrapeRecipeInfoFromPrintLinks(ctx context.Context, printLinks []string) ([]Recipe, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	c := s.createScraper()
-	var err error
-	recipes := make([]Recipe, 0, len(printLinks))
-	var mutex sync.Mutex
-	c.OnHTML("html > body", func(h *colly.HTMLElement) {
-		var recipe Recipe
+	printScraper.OnHTML("html > body", func(h *colly.HTMLElement) {
+		recipe.Link = h.Request.URL.String()
 		h.ForEach("span.wprm-recipe-rating-average", func(i int, h *colly.HTMLElement) {
 			var rating float64
 			rating, err = strconv.ParseFloat(h.Text, 64)
@@ -252,15 +153,88 @@ func (s *Scraper) ScrapeRecipeInfoFromPrintLinks(ctx context.Context, printLinks
 		h.ForEach("h2.wprm-recipe-name", func(i int, h *colly.HTMLElement) {
 			recipe.Name = h.Text
 		})
-		mutex.Lock()
-		defer mutex.Unlock()
-		recipes = append(recipes, recipe)
+		h.ForEach("span.wprm-recipe-ingredient-name", func(i int, h *colly.HTMLElement) {
+			recipe.Ingredients = append(recipe.Ingredients, strings.TrimSpace(strings.ToLower(h.Text)))
+		})
+	})
+	printScraper.OnError(func(r *colly.Response, err2 error) {
+		err = err2
+		cancel()
+	})
+	c.Visit(u)
+
+	return recipe, err
+}
+
+func (s *Scraper) validate() error {
+	if s.MaxPages < 1 {
+		return errors.New("max pages cannot be less than 1")
+	}
+	if s.MaxRecipes < 1 {
+		return errors.New("max recipes cannot be less than 1")
+	}
+	if s.Parallelism < 1 {
+		return errors.New("parallelism cannot be less than 1")
+	}
+	return nil
+}
+
+func (s *Scraper) ScrapeRecipe(ctx context.Context, u string) ([]Recipe, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	var recipes []Recipe
+	var err error
+	defer cancel()
+	c := s.createScraper(true)
+	var recipeMutex sync.Mutex
+	c.OnRequest(abortRequestHook(ctx))
+	c.OnHTML("html body", func(h *colly.HTMLElement) {
+		if len(h.DOM.Find("article").Nodes) == 0 {
+			cancel()
+			return
+		}
+		h.ForEachWithBreak("article", func(i int, h *colly.HTMLElement) bool {
+			recipeLink := h.ChildAttr("a", "href")
+			var recipe Recipe
+			recipe, err = s.ScrapeRecipeLink(ctx, recipeLink)
+			if err != nil {
+				cancel()
+				return false
+			}
+			if len(strings.TrimSpace(recipe.Name)) == 0 {
+				return true
+			}
+			recipeMutex.Lock()
+			defer recipeMutex.Unlock()
+			if len(recipes) == s.MaxRecipes {
+				cancel()
+				return false
+			}
+			recipes = append(recipes, recipe)
+			return true
+		})
 	})
 	c.OnError(func(r *colly.Response, err2 error) {
 		err = err2
 		cancel()
 	})
-	_ = s.scrapeInParallel(ctx, c, printLinks)
+	u = strings.TrimSuffix(u, "/")
+outerLoop:
+	for i := 0; i < s.MaxPages; {
+		for j := 0; j < s.Parallelism; j++ {
+			if i == s.MaxPages-1 {
+				break outerLoop
+			}
+			select {
+			case <-ctx.Done():
+				break outerLoop
+			default:
+				c.Visit(fmt.Sprintf("%s/page/%d", u, i+1))
+			}
+			i++
+		}
+		c.Wait()
+	}
+	c.Wait()
 	if err != nil {
 		return nil, err
 	}
