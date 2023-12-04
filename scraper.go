@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/gocolly/colly/v2"
+	"github.com/google/uuid"
 )
 
 const (
@@ -70,6 +71,7 @@ type Recipe struct {
 	Course      []string // Course tags
 	Keywords    []string // Keyword tags
 	Ingredients []string // Recipe ingredients
+	ID          string   // a unique id for this recipe
 }
 
 func New(options ...ScraperOption) (*Scraper, error) {
@@ -122,6 +124,7 @@ func (s *Scraper) ScrapeRecipeLink(ctx context.Context, u string) (Recipe, error
 	})
 
 	printScraper.OnHTML("html > body", func(h *colly.HTMLElement) {
+		recipe.ID = uuid.NewString()
 		recipe.Link = h.Request.URL.String()
 		h.ForEach("span.wprm-recipe-rating-average", func(i int, h *colly.HTMLElement) {
 			var rating float64

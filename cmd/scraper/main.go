@@ -25,7 +25,7 @@ func main() {
 		fmt.Println("Error", err)
 		os.Exit(1)
 	}
-	err = exporter.ExportRecipesToFile("./recipe-index.html", recipes)
+	err = exporter.ExportRecipes(context.TODO(), recipes)
 	if err != nil {
 		fmt.Println("Error", err)
 		os.Exit(1)
