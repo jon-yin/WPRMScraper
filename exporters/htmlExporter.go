@@ -3,13 +3,12 @@ package exporters
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"runtime"
+	"text/template"
 	"time"
 
 	scraper "github.com/jon-yin/RecipeScraper"
@@ -18,8 +17,10 @@ import (
 type ctxKey string
 
 const (
-	TmplPath         = "recipe.tmpl"
-	recipeKey ctxKey = "recipe_key"
+	recipeDestFile              = "index.html"
+	recipeSrcFile               = "recipe.html"
+	recipeKey            ctxKey = "recipe_key"
+	recipeScriptTemplate        = `let recipeData = {{.Data}}`
 )
 
 type HtmlExporterOption func(*HtmlExporter)
@@ -51,7 +52,7 @@ type HtmlExporter struct {
 }
 
 type recipeTemplateData struct {
-	JSONData template.JS
+	Data string
 }
 
 func NewHtmlExporter(opts ...HtmlExporterOption) (*HtmlExporter, error) {
@@ -68,12 +69,7 @@ func NewHtmlExporter(opts ...HtmlExporterOption) (*HtmlExporter, error) {
 	for _, v := range opts {
 		v(exporter)
 	}
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return nil, errors.New("could not load template")
-	}
-	currentDir := path.Dir(file)
-	exporter.template = template.Must(template.ParseFiles(path.Join(currentDir, TmplPath)))
+	exporter.template = template.Must(template.New("recipeData").Parse(recipeScriptTemplate))
 	return exporter, nil
 }
 
@@ -116,13 +112,12 @@ func (h *HtmlExporter) saveRecipes(ctx context.Context, recipes []scraper.Recipe
 }
 
 func (h *HtmlExporter) makeTemplateData(recipes []scraper.Recipe) (recipeTemplateData, error) {
-
 	templateData := recipeTemplateData{}
 	jsonData, err := json.Marshal(recipes)
 	if err != nil {
 		return recipeTemplateData{}, err
 	}
-	templateData.JSONData = template.JS(jsonData)
+	templateData.Data = string(jsonData)
 	return templateData, nil
 }
 
@@ -131,14 +126,31 @@ func (h *HtmlExporter) ExportRecipes(ctx context.Context, recipes []scraper.Reci
 	if err != nil {
 		return err
 	}
-	indexFile, err := os.OpenFile(path.Join(h.DestDir, "index.html"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	scriptFile, err := os.OpenFile(path.Join(h.DestDir, "data.js"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
-	defer indexFile.Close()
+	defer scriptFile.Close()
 	tmpData, err := h.makeTemplateData(recipes)
 	if err != nil {
 		return err
 	}
-	return h.template.Execute(indexFile, tmpData)
+	err = h.template.Execute(scriptFile, tmpData)
+	if err != nil {
+		return err
+	}
+	_, currentFile, _, _ := runtime.Caller(0)
+	recipeFilePath := path.Join(path.Dir(currentFile), recipeSrcFile)
+	recipeFile, err := os.Open(recipeFilePath)
+	if err != nil {
+		return err
+	}
+	defer recipeFile.Close()
+	copiedFile, err := os.OpenFile(path.Join(h.DestDir, recipeDestFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		return err
+	}
+	defer copiedFile.Close()
+	_, err = io.Copy(copiedFile, recipeFile)
+	return err
 }

@@ -1,12 +1,15 @@
-iframe {
-    height: 100%;
-    width: 100%;
-}
-
 .draw-line {
     border-right: 1px solid;
 }
 
 #title {
     border-bottom: 1px solid;
+}
+
+.scrollable {
+    overflow-y: auto;
+}
+
+.max-height-screen {
+    max-height: 100vh;
 }
