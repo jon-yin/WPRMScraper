@@ -1,15 +1,35 @@
-.draw-line {
-    border-right: 1px solid;
-}
-
-#title {
-    border-bottom: 1px solid;
-}
-
 .scrollable {
     overflow-y: auto;
 }
 
 .max-height-screen {
     max-height: 100vh;
+}
+
+#menubar {
+    display: flex;
+    gap: 5vh;
+}
+
+svg {
+    min-height: 100%
+}
+
+.icon-end {
+    margin-left: auto;
+}
+
+#search {
+    width: 100%;
+    height: 100%;
+}
+
+#searchField {
+    position: relative;
+    flex-grow: 1;
+}
+
+#clear {
+    position: absolute;
+    right: 0%
 }

@@ -1,20 +1,7 @@
 const iframe = document.querySelector("#recipe-detail");
 
-const siteData = {
-    courses: {
-        listGroups: [],
-        recipes: []
-    },
-    cuisines: {
-        listGroups: [],
-        recipes: []
-    },
-    allRecipes: {
-        listGroup: null,
-        recipes: []
-    }
-}
-
+let siteData;
+let selectedSort = "name";
 const recipesById = new Map();
 const recipeSortOptions = {
     "name": (id1, id2) => {
@@ -46,8 +33,6 @@ const recipeSortOptions = {
     }
 }
 
-let selectedSort = "name";
-
 function applySort() {
     const curSort = recipeSortOptions[selectedSort];
     const sortListGroup = listGroup => {
@@ -78,7 +63,7 @@ function categorizeRecipes(recipes) {
     const cuisinesMap = {};
     const coursesMap = {};
     recipes.forEach(recipe => {
-        recipe.Cuisine.forEach(cuisine => {
+        recipe.Cuisine?.forEach(cuisine => {
             if (!cuisinesMap[cuisine]) {
                 cuisinesMap[cuisine] = [recipe.ID];
             } else {
@@ -88,7 +73,7 @@ function categorizeRecipes(recipes) {
         // a tuple [cuisines, [recipes]]
         siteData.cuisines.recipes = Object.keys(cuisinesMap).sort().map(k => [k, cuisinesMap[k]]);
 
-        recipe.Course.forEach(course => {
+        recipe.Course?.forEach(course => {
             if (!coursesMap[course]) {
                 coursesMap[course] = [recipe.ID];
             } else {
@@ -129,6 +114,94 @@ function createElement(specs) {
     }) ?? [];
     element.append(...convertedChildren);
     return element;
+}
+
+function buildHeader() {
+    const menuBar = document.querySelector("#menubar");
+    const dimen = menuBar.offsetHeight;
+    const iconEnd = createElement({
+        type: "span",
+        classes: ["icon-end"]
+    });
+    const iconStart = createElement({
+        type: "span",
+        classes: ["icon-start"]
+    })
+
+    const createIconStart = (svg, tooltip = "") => {
+        const cloned = iconStart.cloneNode();
+        cloned.innerHTML = svg;
+        if (tooltip !== "") {
+            cloned.setAttribute("data-bs-toggle", "tooltip");
+            cloned.setAttribute("data-bs-title", tooltip);
+            cloned.setAttribute("data-bs-placement", "bottom");
+            cloned.tooltip = new bootstrap.Tooltip(cloned);
+        }
+        return cloned;
+    }
+
+    const createIconEnd = (svg, tooltip = "") => {
+        const cloned = iconEnd.cloneNode();
+        cloned.innerHTML = svg;
+        if (tooltip !== "") {
+            cloned.setAttribute("data-bs-toggle", "tooltip");
+            cloned.setAttribute("data-bs-title", tooltip);
+            cloned.setAttribute("data-bs-placement", "bottom");
+            cloned.tooltip = new bootstrap.Tooltip(cloned);
+        }
+        return cloned;
+    }
+    
+    const sun = feather.icons["sun"].toSvg({ height: dimen, width: dimen });
+    const moon = feather.icons["moon"].toSvg({ height: dimen, width: dimen });
+    const expand = feather.icons["maximize-2"].toSvg({height: dimen, width: dimen});
+    const collapse = feather.icons["minimize-2"].toSvg({height: dimen, width: dimen});
+    
+    const sunElem = createIconEnd(sun, "light mode");
+    const moonElem = createIconEnd(moon, "dark mode");
+    const expandElem = createIconStart(expand, "expand all recipes");
+    const collapseElem = createIconStart(collapse, "collapse all recipes");
+
+    // Nightmode toggle
+    const toggleNightMode = (e) => {
+        siteData.isNightMode = !siteData.isNightMode;
+        e.currentTarget.tooltip.hide();
+        if (siteData.isNightMode) {
+            e.currentTarget.replaceWith(sunElem);
+            document.querySelector("html").setAttribute("data-bs-theme", "dark");
+        } else {
+            e.currentTarget.replaceWith(moonElem);
+            document.querySelector("html").setAttribute("data-bs-theme", "light");
+        }
+
+    } 
+    sunElem.addEventListener("click", toggleNightMode);
+    moonElem.addEventListener("click", toggleNightMode);
+
+    // expand and collapse controls
+    expandElem.addEventListener("click", () => {
+        const divs = document.querySelectorAll("div.collapse");
+        divs.forEach(div => div.classList.add("show"));
+    });
+
+    collapseElem.addEventListener("click", () => {
+        const divs = document.querySelectorAll("div.collapse");
+        divs.forEach(div => div.classList.remove("show"));
+    });
+
+    // Search field
+    const searchField = document.querySelector("#template").content.querySelector("#searchField");
+    const clearIcon = feather.icons["x"].toSvg({height: dimen, width: dimen});
+    const clearElem = createIconStart(clearIcon, "clear search");
+    clearElem.id = "clear";
+    searchField.append(clearElem);
+    clearElem.addEventListener("click", e => {
+        document.querySelector("#search").value = "";
+    });
+
+    const nightModeElem = siteData.isNightMode ? sunElem : moonElem;
+
+    menuBar.append(expandElem, collapseElem, searchField, nightModeElem);
 }
 
 function buildRecipeList(recipeIds) {
@@ -232,16 +305,35 @@ function buildSite() {
 
     const allRecipesAccordion = document.querySelector("#allRecipesAccordion");
     const allRecipesList = buildRecipeList(recipeData.map(recipe => recipe.ID));
-    siteData.allRecipes.listGroup = allRecipesList.querySelector(".list-group");
+    siteData.allRecipes.listGroup = allRecipesList;
 
+    // accordion stuff
     attachToAccordion(courseParentAccordion, courseChildAccordion);
     attachToAccordion(cuisinesParentAccordion, cuisinesChildAccordion);
     attachToAccordion(allRecipesAccordion, allRecipesList);
     applySort();
+
+    // header controls
+    buildHeader();
 }
 
 function initialize() {
     iframe.src = "";
+    siteData = {
+        courses: {
+            listGroups: [],
+            recipes: []
+        },
+        cuisines: {
+            listGroups: [],
+            recipes: []
+        },
+        allRecipes: {
+            listGroup: null,
+            recipes: []
+        },
+        isNightMode: false
+    }
     indexRecipes(recipeData);
     buildSite();
 }
