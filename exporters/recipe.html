@@ -11,17 +11,29 @@
 </head>
 <body>
     <div class="container-fluid sticky-top bg-body pb-2">
-        <div class="row">
+        <div class="row mt-2">
             <div class="col-4">
-                <div class="draw-line pt-2">
-                    <h2 id="title">Recipe Scraper</h2>
+                <div class="pt-2 d-flex">
+                    <h2 id="title" class="d-inline-block">Recipe Scraper</h2>
+                    <div class="menubar d-flex flex-grow-1" id="menubar-left">
+                        <i data-feather="maximize-2" id="expand" data-bs-toggle="tooltip" data-bs-title="expand recipes" data-bs-placement="bottom" class="icon-end" ></i>
+                        <i data-feather="minimize-2" id="collapse" data-bs-toggle="tooltip" data-bs-title="collapse recipes" data-bs-placement="bottom"></i>
+                    </div>
                 </div>
             </div>
-            <div class="col me-2" id="menubar">
+            <div class="col me-2 d-flex" id="menubar-right">
+                <div id="searchField">
+                    <input type="text" id="search" placeholder="Search for specific recipes"/>
+                    <i data-feather="x" id="clear"></i>
+                </div>
+                <div id="nightMode">
+                    <i data-feather="sun" id="light-mode" data-bs-toggle="tooltip" data-bs-title="light mode" data-bs-placement="bottom" class="nmIcon"></i>
+                    <i data-feather="moon" id="dark-mode" data-bs-toggle="tooltip" data-bs-title="dark mode" data-bs-placement="bottom" class="nmIcon"></i>
+                </div>
             </div>
         </div>
     </div>
-    <div class="container-fluid">
+    <div class="container-fluid" id="content">
         <div class="row">
             <div class="col-4 scrollable">
                 <div class="accordion" id="accordionExample">
@@ -30,10 +42,11 @@
                             <button class="accordion-button" type="button" data-bs-toggle="collapse"
                                 data-bs-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
                                 All Recipes
+                                <span class="recipe-count" data-recipe-group="#recipe-group-1"></span>
                             </button>
                         </h2>
                         <div id="collapseOne" class="accordion-collapse collapse show">
-                            <div class="accordion-body">
+                            <div class="accordion-body" id="recipe-group-1">
                             </div>
                         </div>
                     </div>
@@ -63,14 +76,15 @@
                     </div>
                 </div>
             </div>
-            <div class="col">
-                <iframe id="recipe-detail" class="w-100 h-100"></iframe>
+            <div class="col scrollable">
+                <iframe id="recipe-detail" class="h-100"></iframe>
             </div>
         </div>
     </div>
     <template id="template">
         <div id="searchField">
             <input type="text" id="search" placeholder="Search for specific recipes"/>
+            <i data-feather="x" id="clear"></i>
         </div>
     </template>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"

@@ -1,18 +1,14 @@
 .scrollable {
-    overflow-y: auto;
+    max-height: 90vh;
+    overflow-y: scroll;
 }
 
-.max-height-screen {
-    max-height: 100vh;
+.menubar {
+    gap: 1vw;
 }
 
-#menubar {
-    display: flex;
-    gap: 5vh;
-}
-
-svg {
-    min-height: 100%
+#menubar-left {
+    margin-left: auto;
 }
 
 .icon-end {
@@ -26,10 +22,33 @@ svg {
 
 #searchField {
     position: relative;
-    flex-grow: 1;
+    flex-grow: 0.9;
+}
+
+#nightMode {
+    position: relative;
+    min-width: 48px;
+    margin-left: auto;
+}
+
+#recipe-detail {
+    display: block;
+    width: 100%;
+    min-height: 90vh
+}
+
+.nmIcon {
+    position: absolute;
+    right: 0%;
 }
 
 #clear {
     position: absolute;
-    right: 0%
+    right: 0%;
+    top: 50%;
+    transform: translate(0, -50%);
+}
+
+.recipe-count {
+    margin-left: 0.25em;
 }
