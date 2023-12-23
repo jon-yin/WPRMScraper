@@ -1,60 +1,36 @@
 const iframe = document.querySelector("#recipe-detail");
 
 let siteData;
-let selectedSort = "name";
 
 const recipesById = new Map();
 const recipeSortOptions = {
-    "name": (id1, id2) => {
-        const recipe1 = recipesById.get(id1);
-        const recipe2 = recipesById.get(id2);
+    "name": (recipe1, recipe2) => {
         return recipe1.Name.localeCompare(recipe2.Name);
     },
-    "rating": (id1, id2) => {
-        const recipe1 = recipesById.get(id1);
-        const recipe2 = recipesById.get(id2);
+    // rate highest rated to lowest
+    "rating": (recipe1, recipe2) => {
         if (Math.abs(recipe1.Rating - recipe2.Rating) < 0.001) {
-            return 0;
+            // if relatively equal, rate by number rated
+            return recipeSortOptions["numRated"](recipe1, recipe2);
         }
         if (recipe1.Rating < recipe2.Rating) {
-            return -1;
+            return 1;
         }
-        return 1;
+        return -1;
     },
-    "numRated": (id1, id2) => {
-        const recipe1 = recipesById.get(id1);
-        const recipe2 = recipesById.get(id2);
+    "numRated": (recipe1, recipe2) => {
         if (recipe1.NumRated < recipe2.NumRated) {
-            return -1;
+            return 1;
         }
         if (recipe1.NumRated === recipe2.NumRated) {
             return 0;
         }
-        return 1;
+        return -1;
     }
 }
 
-const nonAlphaNumericRegexp = /[^a-zA-Z0-9]/g;
-
-function applySort() {
-    const curSort = recipeSortOptions[selectedSort];
-    const sortListGroup = listGroup => {
-        const childrenArr = Array.from(listGroup.children);
-        childrenArr.sort((elem1, elem2) => {
-            return curSort(elem1.getAttribute("data-uuid"), elem2.getAttribute("data-uuid"));
-        });
-        listGroup.replaceChildren(...childrenArr);
-    }
-
-    siteData.courses.listGroups.forEach(sortListGroup);
-    siteData.cuisines.listGroups.forEach(sortListGroup);
-    sortListGroup(siteData.allRecipes.listGroup);
-}
-
-function makeIdSafe(str) {
-    //trim non-alphanumeric characters
-    return str.replaceAll(/[^a-zA-Z0-9]/g, "");
-}
+const nonAlphaNumericRegexp = /\W/g;
+const spaceRegex = /\s+/g;
 
 function indexRecipesById(recipes) {
     recipes.forEach(recipe => {
@@ -67,25 +43,31 @@ function categorizeRecipes(recipes) {
     const coursesMap = {};
     recipes.forEach(recipe => {
         recipe.Cuisine?.forEach(cuisine => {
-            if (!cuisinesMap[cuisine]) {
-                cuisinesMap[cuisine] = [recipe.ID];
+            const cuisineKey = normalizeString(cuisine);
+            if (!cuisinesMap[cuisineKey]) {
+                cuisinesMap[cuisineKey] = {
+                    recipes: [recipe.ID],
+                    name: cuisine
+                };
             } else {
-                cuisinesMap[cuisine].push(recipe.ID);
+                cuisinesMap[cuisineKey].recipes.push(recipe.ID);
             }
         });
-        // a tuple [cuisines, [recipes]]
-        siteData.cuisines.recipes = Object.keys(cuisinesMap).sort().map(k => [k, cuisinesMap[k]]);
+        siteData.cuisines = cuisinesMap;
 
         recipe.Course?.forEach(course => {
-            if (!coursesMap[course]) {
-                coursesMap[course] = [recipe.ID];
+            const courseKey = normalizeString(course);
+            if (!coursesMap[courseKey]) {
+                coursesMap[courseKey] ={ 
+                    recipes: [recipe.ID],
+                    name: course
+                };
             } else {
-                coursesMap[course].push(recipe.ID);
+                coursesMap[courseKey].recipes.push(recipe.ID);
             }
         })
-
-        siteData.courses.recipes = Object.keys(coursesMap).sort().map(k => [k, coursesMap[k]]);
-        siteData.allRecipes.recipes.push(recipe);
+        siteData.courses = coursesMap;
+        siteData.allRecipes.push(recipe.ID);
     })
 }
 
@@ -119,7 +101,7 @@ function createElement(specs) {
     return element;
 }
 
-function attachIconControls() {
+function attachMenubarControls() {
     const expandIcon = document.querySelector("#expand");
     expandIcon.addEventListener("click", () => {
         document.querySelectorAll(".collapse").forEach(elem => {
@@ -170,42 +152,37 @@ function attachIconControls() {
     } else {
         lightModeIcon.classList.add("d-none");
     }
-    
+
+    const dropdownButton = document.querySelector("#dropdownText");
+    dropdownButton.innerText = document.querySelector(`[data-sort="${siteData.selectedSort}"]`).innerText;
+    const sortMenu = document.querySelector("#sortMenu");
+    sortMenu.addEventListener("click", e => {
+        if (e.target.tagName !== "A") {
+            return;
+        }
+        siteData.selectedSort = e.target.getAttribute("data-sort");
+        dropdownButton.innerText = e.target.innerText;
+        buildRecipeLists();
+    });
 }
 
-function buildRecipeList(recipeIds) {
-    return createElement({
-        type: "div",
-        classes: ["list-group"],
-        children: recipeIds.map(recipeId => {
-            const recipe = recipesById.get(recipeId);
-            return {
-            type: "a",
-            children: [recipe.Name],
-            attrs: {
-                "data-toggle": "list",
-                "href": "#",
-                "data-uuid": recipeId
-            },
-            classes: ["list-group-item", "list-group-item-action", "list-group-item-light"],
-            onClick: (e) => {
-                // do not scroll screen after clicking on a item
-                e.preventDefault();
-                // set iframe to display new image
-                const id = e.target.getAttribute("data-uuid");
-                iframe.src = "./recipes/" + id + ".html";
-            }
-    }})});
+function listGroupClickListener(e) {
+    if (e.target.classList.contains("list-group-item")) {
+        iframe.src = "./recipes/" + e.target.getAttribute("data-uuid") + ".html";
+    }
 }
 
-function buildChildAccordion(courseTuple) {
-    const accordionItems = courseTuple.map(([key, recipes]) => {
-        const id = makeIdSafe(key);
-        const accordBodyId = `${id}-body`;
+function buildChildAccordion(recipeGroups) {
+    const recipeTuples = Object.entries(recipeGroups).sort(([,{name: name1}], [, {name: name2}]) => {
+        return name1.localeCompare(name2);
+    });
+    const accordionItems = recipeTuples.map(([key, recipeObj]) => {
+        const { name } = recipeObj;
+        const accordBodyId = `${key}-accord-body`;
+        const listGroupId = `${key}-list-group`;
         const accordItem = createElement({
             type: "div",
             classes: ["accordion-item"],
-            id,
             children: [
                 // accordion header
                 {
@@ -214,7 +191,7 @@ function buildChildAccordion(courseTuple) {
                     children: [
                         {
                             type: "button",
-                            children: [key.charAt(0).toUpperCase() + key.slice(1), createElement({
+                            children: [name.charAt(0).toUpperCase() + name.slice(1), createElement({
                                 type: "span",
                                 classes: ["recipe-count"],
                             })],
@@ -238,8 +215,12 @@ function buildChildAccordion(courseTuple) {
                         {
                             type: "div",
                             classes: ["accordion-body"],
-                            // list recipes in each sub category
-                            children: [buildRecipeList(recipes)]
+                            children: [createElement({
+                                type: "div",
+                                classes: ["list-group"],
+                                id: listGroupId,
+                                onClick: listGroupClickListener
+                            })]
                         }
                     ]
                 }
@@ -254,6 +235,26 @@ function buildChildAccordion(courseTuple) {
         children: accordionItems
     });
     return accordion;
+}
+
+function buildRecipeLists() {
+
+    // build list groups first
+    const buildListGroup = (parentContainer, recipeIds) => {
+        const listGroupItems = recipeIds
+        .map(id => recipesById.get(id))
+        .filter(recipe => recipe.isVisible)
+        .sort(recipeSortOptions[siteData.selectedSort])
+        .map(recipe => recipe.listGroupItem.cloneNode(true));
+        parentContainer.replaceChildren(...listGroupItems);
+    }
+    Object.entries(siteData.cuisines).forEach(([cuisine, {recipes: recipeIds}]) => 
+        buildListGroup(document.querySelector(`#${cuisine}-list-group`), recipeIds));
+
+    Object.entries(siteData.courses).forEach(([course, {recipes: recipeIds}]) => 
+        buildListGroup(document.querySelector(`#${course}-list-group`), recipeIds));
+
+    buildListGroup(document.querySelector('#all-list-group'), siteData.allRecipes);
 }
 
 function updateRecipeCounts() {
@@ -288,34 +289,40 @@ function indexRecipes(recipes) {
 
 function buildSite() {
     const courseParentAccordion = document.querySelector("#byCourseAccordion")
-    const courseChildAccordion = buildChildAccordion(siteData.courses.recipes);
-    siteData.courses.listGroups = courseChildAccordion.querySelectorAll(".list-group");
+    const courseChildAccordion = buildChildAccordion(siteData.courses);
 
     const cuisinesParentAccordion = document.querySelector("#byCuisineAccordion");
-    const cuisinesChildAccordion = buildChildAccordion(siteData.cuisines.recipes);
-    siteData.cuisines.listGroups = cuisinesChildAccordion.querySelectorAll(".list-group");
+    const cuisinesChildAccordion = buildChildAccordion(siteData.cuisines);
 
     const allRecipesAccordion = document.querySelector("#allRecipesAccordion");
-    const allRecipesList = buildRecipeList(recipeData.map(recipe => recipe.ID));
-    siteData.allRecipes.listGroup = allRecipesList;
+    const allRecipesList = createElement({
+        type: "div",
+        classes: ["list-group"],
+        id: "all-list-group",
+        onClick: listGroupClickListener
+    });
 
     // accordion stuff
     attachToAccordion(courseParentAccordion, courseChildAccordion);
     attachToAccordion(cuisinesParentAccordion, cuisinesChildAccordion);
     attachToAccordion(allRecipesAccordion, allRecipesList);
-    applySort();
+    buildRecipeLists();
     writeRecipeCounts();
 
     // header controls
     const dimen = "48"; // (double the default icon size)
     feather.replace({ height: dimen, width: dimen});
-    attachIconControls();
+    attachMenubarControls();
 }
 
-function normalizeString(str) {
+function normalizeString(str, preserveSpaces = false) {
     const latinized = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const alphaNumeric = latinized.replaceAll(nonAlphaNumericRegexp, "");
-    return alphaNumeric.toLowerCase();
+    let resString = latinized;
+    if (preserveSpaces) {
+        resString = resString.replaceAll(spaceRegex, "_");
+    }
+    resString = resString.replaceAll(nonAlphaNumericRegexp, "");
+    return resString.toLowerCase();
 }
 
 function augmentRecipeData(recipeData) {
@@ -327,6 +334,16 @@ function augmentRecipeData(recipeData) {
         clonedRecipe.Keywords = recipe.Keywords.map(normalizeString);
         clonedRecipe.Ingredients = recipe.Keywords.map(normalizeString);
         clonedRecipe.isVisible = true;
+        clonedRecipe.listGroupItem = createElement({
+            type: "a",
+            children: [clonedRecipe.Name],
+            attrs: {
+                "data-toggle": "list",
+                "href": "#",
+                "data-uuid": clonedRecipe.ID,
+            },
+            classes: ["list-group-item", "list-group-item-action", "list-group-item-light"]
+        });
         return clonedRecipe;
     });
 }
@@ -336,19 +353,12 @@ function initialize() {
     iframe.src = "";
     siteData = {
         courses: {
-            listGroups: [],
-            recipes: []
         },
         cuisines: {
-            listGroups: [],
-            recipes: []
         },
-        allRecipes: {
-            listGroup: null,
-            recipes: []
-        },
+        allRecipes: [],
         isDarkMode: false,
-        searchTerm: ""
+        selectedSort: "name"
     }
     indexRecipes(annotatedRecipeData);
     buildSite();

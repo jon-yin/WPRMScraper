@@ -15,7 +15,17 @@
             <div class="col-4">
                 <div class="pt-2 d-flex">
                     <h2 id="title" class="d-inline-block">Recipe Scraper</h2>
-                    <div class="menubar d-flex flex-grow-1" id="menubar-left">
+                    <div class="menubar d-flex flex-grow-1 justify-content-end" id="menubar-left">
+                        <div class="dropdown">
+                            <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="dropdownText">
+                                Sort
+                              </button>
+                              <ul class="dropdown-menu" id="sortMenu">
+                                <li><a class="dropdown-item" href="#" data-sort="name">Name</a></li>
+                                <li><a class="dropdown-item" href="#" data-sort="rating">Rating</a></li>
+                                <li><a class="dropdown-item" href="#" data-sort="numRated">Number rated</a></li>
+                              </ul>                    
+                        </div>
                         <i data-feather="maximize-2" id="expand" data-bs-toggle="tooltip" data-bs-title="expand recipes" data-bs-placement="bottom" class="icon-end" ></i>
                         <i data-feather="minimize-2" id="collapse" data-bs-toggle="tooltip" data-bs-title="collapse recipes" data-bs-placement="bottom"></i>
                     </div>
