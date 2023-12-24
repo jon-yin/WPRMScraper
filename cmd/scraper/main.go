@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	s, err := scraper.New(scraper.MaxRecipes(100))
+	s, err := scraper.New(scraper.MaxRecipes(10000))
 	if err != nil {
 		fmt.Println("Error", err)
 		os.Exit(1)

@@ -22,6 +22,7 @@
 }
 
 #nightMode {
+    margin-left: auto;
     position: relative;
     min-width: 48px;
 }

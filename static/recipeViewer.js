@@ -124,12 +124,16 @@ function attachMenubarControls() {
         searchField.value = "";
     });
     const fireSearchQuery = searchTerm => {
-        console.log(searchTerm);
+        const normTerm = normalizeString(searchTerm);
+        recipesById.forEach((v) => {
+            const normalName = normalizeString(v.Name);
+            v.isVisible = normalName.includes(normTerm) || v.Keywords.some(tag => tag.includes(normTerm)) || v.Ingredients.some(ingredient => ingredient.includes(normTerm));
+        });
+        buildRecipeLists();
+        updateRecipeCounts();
     }
-    let timeoutId;
     searchField.addEventListener("input", e => {
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(fireSearchQuery ,1000, e.target.value);
+        fireSearchQuery(e.target.value);
     })
 
     const lightModeIcon = document.querySelector("#light-mode");
@@ -331,12 +335,12 @@ function augmentRecipeData(recipeData) {
             ...recipe
         };
         clonedRecipe.cleanName = normalizeString(recipe.Name);
-        clonedRecipe.Keywords = recipe.Keywords.map(normalizeString);
-        clonedRecipe.Ingredients = recipe.Keywords.map(normalizeString);
+        clonedRecipe.Keywords = recipe.Keywords?.map(normalizeString) ?? [];
+        clonedRecipe.Ingredients = recipe.Keywords?.map(normalizeString) ?? [];
         clonedRecipe.isVisible = true;
         clonedRecipe.listGroupItem = createElement({
             type: "a",
-            children: [clonedRecipe.Name],
+            children: [`${clonedRecipe.Name} - ${clonedRecipe.Rating}★`],
             attrs: {
                 "data-toggle": "list",
                 "href": "#",
@@ -358,7 +362,9 @@ function initialize() {
         },
         allRecipes: [],
         isDarkMode: false,
-        selectedSort: "name"
+        selectedSort: "name",
+        pendingSearch: null,
+        currentSearch: ""
     }
     indexRecipes(annotatedRecipeData);
     buildSite();
