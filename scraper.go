@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,21 +18,25 @@ const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0"
 )
 
-type ScraperOption func(*Scraper)
+var (
+	errComplete = errors.New("finished scraping")
+)
 
-func MaxPages(pages int) ScraperOption {
+type Option func(*Scraper)
+
+func MaxPages(pages int) Option {
 	return func(s *Scraper) {
 		s.MaxPages = pages
 	}
 }
 
-func MaxRecipes(recipes int) ScraperOption {
+func MaxRecipes(recipes int) Option {
 	return func(s *Scraper) {
 		s.MaxRecipes = recipes
 	}
 }
 
-func Parallelism(parallelism int) ScraperOption {
+func Parallelism(parallelism int) Option {
 	return func(s *Scraper) {
 		s.Parallelism = parallelism
 	}
@@ -74,7 +79,7 @@ type Recipe struct {
 	ID          string   // a unique id for this recipe
 }
 
-func New(options ...ScraperOption) (*Scraper, error) {
+func New(options ...Option) (*Scraper, error) {
 	scraper := &Scraper{
 		MaxRecipes:  math.MaxInt,
 		MaxPages:    math.MaxInt,
@@ -91,7 +96,8 @@ func New(options ...ScraperOption) (*Scraper, error) {
 
 func (s *Scraper) createScraper(parallel bool) *colly.Collector {
 	c := colly.NewCollector(
-		colly.UserAgent(userAgent))
+		colly.UserAgent(userAgent),
+	)
 	if parallel {
 		c.Async = true
 		c.Limit(&colly.LimitRule{
@@ -103,9 +109,9 @@ func (s *Scraper) createScraper(parallel bool) *colly.Collector {
 }
 
 func (s *Scraper) ScrapeRecipeLink(ctx context.Context, u string) (Recipe, error) {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	var recipe Recipe
-	var err error
 	c := s.createScraper(false)
 	printScraper := c.Clone()
 	c.OnRequest(abortRequestHook(ctx))
@@ -118,29 +124,29 @@ func (s *Scraper) ScrapeRecipeLink(ctx context.Context, u string) (Recipe, error
 		recipeLink := h.Attr("href")
 		printScraper.Visit(recipeLink)
 	})
-	c.OnError(func(r *colly.Response, err2 error) {
-		err = err2
-		cancel()
+	c.OnError(func(r *colly.Response, err error) {
+		if r.StatusCode == http.StatusNotFound {
+			cancel(errComplete)
+			return
+		}
+		cancel(err)
 	})
 
 	printScraper.OnHTML("html > body", func(h *colly.HTMLElement) {
 		recipe.ID = uuid.NewString()
 		recipe.Link = h.Request.URL.String()
 		h.ForEach("span.wprm-recipe-rating-average", func(i int, h *colly.HTMLElement) {
-			var rating float64
-			rating, err = strconv.ParseFloat(h.Text, 64)
+			rating, err := strconv.ParseFloat(h.Text, 64)
 			if err != nil {
-				fmt.Println("Issue with link", h.Request.URL.String())
-				cancel()
+				cancel(err)
 			}
 			recipe.Rating = rating
 		})
 		h.ForEach("span.wprm-recipe-rating-count", func(i int, h *colly.HTMLElement) {
-			var numRated int64
-			numRated, err = strconv.ParseInt(h.Text, 10, 0)
+			numRated, err := strconv.ParseInt(h.Text, 10, 0)
 			if err != nil {
 				fmt.Println("Issue with link", h.Request.URL.String())
-				cancel()
+				cancel(err)
 			}
 			recipe.NumRated = int(numRated)
 		})
@@ -160,12 +166,11 @@ func (s *Scraper) ScrapeRecipeLink(ctx context.Context, u string) (Recipe, error
 			recipe.Ingredients = append(recipe.Ingredients, strings.TrimSpace(strings.ToLower(h.Text)))
 		})
 	})
-	printScraper.OnError(func(r *colly.Response, err2 error) {
-		err = err2
-		cancel()
+	printScraper.OnError(func(r *colly.Response, err error) {
+		cancel(err)
 	})
 	c.Visit(u)
-
+	err := context.Cause(ctx)
 	return recipe, err
 }
 
@@ -182,25 +187,37 @@ func (s *Scraper) validate() error {
 	return nil
 }
 
-func (s *Scraper) ScrapeRecipe(ctx context.Context, u string) ([]Recipe, error) {
-	ctx, cancel := context.WithCancel(ctx)
+func (s *Scraper) validateIndex(u string) error {
+	hasArticles := false
+	c := s.createScraper(false)
+	c.OnHTML("html body", func(h *colly.HTMLElement) {
+		if len(h.DOM.Find("article").Nodes) != 0 {
+			hasArticles = true
+		}
+	})
+	c.Visit(u)
+	if !hasArticles {
+		return errors.New("invalid index no articles found")
+	}
+	return nil
+}
+
+func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, error) {
+	if err := s.validateIndex(u); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
 	var recipes []Recipe
-	var err error
-	defer cancel()
+	defer cancel(nil)
 	c := s.createScraper(true)
 	var recipeMutex sync.Mutex
 	c.OnRequest(abortRequestHook(ctx))
 	c.OnHTML("html body", func(h *colly.HTMLElement) {
-		if len(h.DOM.Find("article").Nodes) == 0 {
-			cancel()
-			return
-		}
 		h.ForEachWithBreak("article", func(i int, h *colly.HTMLElement) bool {
 			recipeLink := h.ChildAttr("a", "href")
-			var recipe Recipe
-			recipe, err = s.ScrapeRecipeLink(ctx, recipeLink)
+			recipe, err := s.ScrapeRecipeLink(ctx, recipeLink)
 			if err != nil {
-				cancel()
+				cancel(err)
 				return false
 			}
 			if len(strings.TrimSpace(recipe.Name)) == 0 {
@@ -209,16 +226,18 @@ func (s *Scraper) ScrapeRecipe(ctx context.Context, u string) ([]Recipe, error) 
 			recipeMutex.Lock()
 			defer recipeMutex.Unlock()
 			if len(recipes) == s.MaxRecipes {
-				cancel()
+				cancel(errComplete)
 				return false
 			}
 			recipes = append(recipes, recipe)
 			return true
 		})
 	})
-	c.OnError(func(r *colly.Response, err2 error) {
-		err = err2
-		cancel()
+	c.OnError(func(r *colly.Response, err error) {
+		if r.StatusCode == http.StatusNotFound {
+			cancel(errComplete)
+		}
+		cancel(err)
 	})
 	u = strings.TrimSuffix(u, "/")
 outerLoop:
@@ -238,6 +257,10 @@ outerLoop:
 		c.Wait()
 	}
 	c.Wait()
+	err := context.Cause(ctx)
+	if errors.Is(err, errComplete) {
+		err = nil
+	}
 	if err != nil {
 		return nil, err
 	}

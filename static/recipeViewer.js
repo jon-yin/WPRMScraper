@@ -43,7 +43,7 @@ function categorizeRecipes(recipes) {
     const coursesMap = {};
     recipes.forEach(recipe => {
         recipe.Cuisine?.forEach(cuisine => {
-            const cuisineKey = normalizeString(cuisine);
+            const cuisineKey = idSafe(cuisine);
             if (!cuisinesMap[cuisineKey]) {
                 cuisinesMap[cuisineKey] = {
                     recipes: [recipe.ID],
@@ -56,7 +56,7 @@ function categorizeRecipes(recipes) {
         siteData.cuisines = cuisinesMap;
 
         recipe.Course?.forEach(course => {
-            const courseKey = normalizeString(course);
+            const courseKey = idSafe(course);
             if (!coursesMap[courseKey]) {
                 coursesMap[courseKey] ={ 
                     recipes: [recipe.ID],
@@ -252,8 +252,9 @@ function buildRecipeLists() {
         .map(recipe => recipe.listGroupItem.cloneNode(true));
         parentContainer.replaceChildren(...listGroupItems);
     }
-    Object.entries(siteData.cuisines).forEach(([cuisine, {recipes: recipeIds}]) => 
-        buildListGroup(document.querySelector(`#${cuisine}-list-group`), recipeIds));
+    Object.entries(siteData.cuisines).forEach(([cuisine, {recipes: recipeIds}]) => {
+        
+        buildListGroup(document.querySelector(`#${cuisine}-list-group`), recipeIds) });
 
     Object.entries(siteData.courses).forEach(([course, {recipes: recipeIds}]) => 
         buildListGroup(document.querySelector(`#${course}-list-group`), recipeIds));
@@ -317,6 +318,14 @@ function buildSite() {
     const dimen = "48"; // (double the default icon size)
     feather.replace({ height: dimen, width: dimen});
     attachMenubarControls();
+}
+
+function idSafe(str) {
+    const normalized = normalizeString(str);
+    if (/^[^a-zA-Z]/.test(normalized)) {
+        return "z" + normalized;
+    }
+    return normalized;
 }
 
 function normalizeString(str, preserveSpaces = false) {
