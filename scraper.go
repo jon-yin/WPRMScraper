@@ -12,6 +12,7 @@ import (
 
 	"github.com/gocolly/colly/v2"
 	"github.com/google/uuid"
+	"github.com/jon-yin/RecipeScraper/logger"
 )
 
 const (
@@ -42,6 +43,12 @@ func Parallelism(parallelism int) Option {
 	}
 }
 
+func WithLogger(logger *logger.Logger) Option {
+	return func(s *Scraper) {
+		s.Logger = logger
+	}
+}
+
 func abortRequestHook(ctx context.Context) func(r *colly.Request) {
 	return func(r *colly.Request) {
 		select {
@@ -49,6 +56,12 @@ func abortRequestHook(ctx context.Context) func(r *colly.Request) {
 			r.Abort()
 		default:
 		}
+	}
+}
+
+func logHook(logger *logger.Logger) func(r *colly.Request) {
+	return func(r *colly.Request) {
+		logger.Info("Visited site %s", r.URL)
 	}
 }
 
@@ -62,9 +75,10 @@ func splitTags(tagString string) []string {
 
 // Scraper represents a scraping job for a wprm site. It starts from the recipe index and fetches links to every recipe
 type Scraper struct {
-	MaxRecipes  int // Limit on max number of recipes to scrape (default: no limit)
-	MaxPages    int // Limit on max number of index pages to scrape through (default: no limit)
-	Parallelism int // Number of parallel link scrapes to run at the same time (default 10)
+	MaxRecipes  int            // Limit on max number of recipes to scrape (default: no limit)
+	MaxPages    int            // Limit on max number of index pages to scrape through (default: no limit)
+	Parallelism int            // Number of parallel link scrapes to run at the same time (default 10)
+	Logger      *logger.Logger // If set, will log scraping events
 }
 
 type Recipe struct {
@@ -184,6 +198,9 @@ func (s *Scraper) validate() error {
 	if s.Parallelism < 1 {
 		return errors.New("parallelism cannot be less than 1")
 	}
+	if s.Logger == nil {
+		s.Logger = logger.NewLogger(nil)
+	}
 	return nil
 }
 
@@ -212,6 +229,7 @@ func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, er
 	c := s.createScraper(true)
 	var recipeMutex sync.Mutex
 	c.OnRequest(abortRequestHook(ctx))
+	c.OnRequest(logHook(s.Logger))
 	c.OnHTML("html body", func(h *colly.HTMLElement) {
 		h.ForEachWithBreak("article", func(i int, h *colly.HTMLElement) bool {
 			recipeLink := h.ChildAttr("a", "href")
@@ -229,6 +247,7 @@ func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, er
 				cancel(errComplete)
 				return false
 			}
+			s.Logger.Info("Scraped recipe %s", recipe.Name)
 			recipes = append(recipes, recipe)
 			return true
 		})
