@@ -5,9 +5,9 @@ import (
 	"flag"
 	"strings"
 
-	scraper "github.com/jon-yin/RecipeScraper"
 	"github.com/jon-yin/RecipeScraper/exporters"
 	"github.com/jon-yin/RecipeScraper/logger"
+	"github.com/jon-yin/RecipeScraper/scraper"
 )
 
 func main() {
@@ -30,23 +30,24 @@ func main() {
 	if *maxPages != -1 {
 		opts = append(opts, scraper.MaxPages(*maxPages))
 	}
+	opts = append(opts, scraper.Logger(&scLog))
 	if len(strings.TrimSpace(link)) == 0 {
 		scLog.Fatal("link cannot be empty")
 	}
 	s, err := scraper.New(opts...)
 	if err != nil {
-		scLog.Fatal(err)
+		scLog.FatalErr(err)
 	}
 	recipes, err := s.ScrapeRecipeIndex(context.TODO(), link)
 	if err != nil {
-		scLog.Fatal(err)
+		scLog.FatalErr(err)
 	}
 	exporter, err := exporters.NewHtmlExporter(exporters.WithDestDir(*htmlExportDir))
 	if err != nil {
-		scLog.Fatal(err)
+		scLog.FatalErr(err)
 	}
 	err = exporter.ExportRecipes(context.TODO(), recipes)
 	if err != nil {
-		scLog.Fatal(err)
+		scLog.FatalErr(err)
 	}
 }

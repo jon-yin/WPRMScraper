@@ -43,9 +43,15 @@ func Parallelism(parallelism int) Option {
 	}
 }
 
-func WithLogger(logger *logger.Logger) Option {
+func Logger(logger *logger.Logger) Option {
 	return func(s *Scraper) {
 		s.Logger = logger
+	}
+}
+
+func Filter(filter RecipeFilter) Option {
+	return func(s *Scraper) {
+		s.Filter = filter
 	}
 }
 
@@ -79,6 +85,7 @@ type Scraper struct {
 	MaxPages    int            // Limit on max number of index pages to scrape through (default: no limit)
 	Parallelism int            // Number of parallel link scrapes to run at the same time (default 10)
 	Logger      *logger.Logger // If set, will log scraping events
+	Filter      RecipeFilter   // A filter to apply to recipe searching
 }
 
 type Recipe struct {
@@ -240,6 +247,9 @@ func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, er
 			}
 			if len(strings.TrimSpace(recipe.Name)) == 0 {
 				return true
+			}
+			if !s.Filter.Filter(recipe) {
+				s.Logger.Info("Recipe %s skipped due to filter", recipe.Name)
 			}
 			recipeMutex.Lock()
 			defer recipeMutex.Unlock()

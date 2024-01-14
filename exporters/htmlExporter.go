@@ -11,7 +11,7 @@ import (
 	"text/template"
 	"time"
 
-	scraper "github.com/jon-yin/RecipeScraper"
+	"github.com/jon-yin/RecipeScraper/scraper"
 )
 
 type ctxKey string
