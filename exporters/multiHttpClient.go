@@ -53,6 +53,8 @@ outerLoop:
 					res, err := m.Client.Do(req)
 					if err != nil && !m.IgnoreErrors {
 						cancel(err)
+						m.wg.Done()
+						return
 					}
 					m.callback(res)
 					m.wg.Done()

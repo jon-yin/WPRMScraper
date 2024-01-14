@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/gocolly/colly/v2"
 	"github.com/google/uuid"
-	"github.com/jon-yin/RecipeScraper/logger"
 )
 
 const (
@@ -43,7 +43,7 @@ func Parallelism(parallelism int) Option {
 	}
 }
 
-func Logger(logger *logger.Logger) Option {
+func Logger(logger *slog.Logger) Option {
 	return func(s *Scraper) {
 		s.Logger = logger
 	}
@@ -65,9 +65,9 @@ func abortRequestHook(ctx context.Context) func(r *colly.Request) {
 	}
 }
 
-func logHook(logger *logger.Logger) func(r *colly.Request) {
+func logHook(logger *slog.Logger) func(r *colly.Request) {
 	return func(r *colly.Request) {
-		logger.Info("Visited site %s", r.URL)
+		logger.Info("visited site", "url", r.URL)
 	}
 }
 
@@ -81,11 +81,11 @@ func splitTags(tagString string) []string {
 
 // Scraper represents a scraping job for a wprm site. It starts from the recipe index and fetches links to every recipe
 type Scraper struct {
-	MaxRecipes  int            // Limit on max number of recipes to scrape (default: no limit)
-	MaxPages    int            // Limit on max number of index pages to scrape through (default: no limit)
-	Parallelism int            // Number of parallel link scrapes to run at the same time (default 10)
-	Logger      *logger.Logger // If set, will log scraping events
-	Filter      RecipeFilter   // A filter to apply to recipe searching
+	MaxRecipes  int          // Limit on max number of recipes to scrape (default: no limit)
+	MaxPages    int          // Limit on max number of index pages to scrape through (default: no limit)
+	Parallelism int          // Number of parallel link scrapes to run at the same time (default 10)
+	Logger      *slog.Logger // Logs events, if not set, then it's set to the default logger
+	Filter      RecipeFilter // A filter to apply to recipe searching
 }
 
 type Recipe struct {
@@ -206,7 +206,7 @@ func (s *Scraper) validate() error {
 		return errors.New("parallelism cannot be less than 1")
 	}
 	if s.Logger == nil {
-		s.Logger = logger.NewLogger(nil)
+		s.Logger = slog.Default()
 	}
 	return nil
 }
@@ -241,6 +241,7 @@ func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, er
 		h.ForEachWithBreak("article", func(i int, h *colly.HTMLElement) bool {
 			recipeLink := h.ChildAttr("a", "href")
 			recipe, err := s.ScrapeRecipeLink(ctx, recipeLink)
+			recipeLogger := s.Logger.With("name", recipe.Name, "link", recipe.Link)
 			if err != nil {
 				cancel(err)
 				return false
@@ -249,7 +250,7 @@ func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, er
 				return true
 			}
 			if !s.Filter.Filter(recipe) {
-				s.Logger.Info("Recipe %s skipped due to filter", recipe.Name)
+				recipeLogger.Info("recipe skipped due to filter")
 			}
 			recipeMutex.Lock()
 			defer recipeMutex.Unlock()
@@ -257,7 +258,7 @@ func (s *Scraper) ScrapeRecipeIndex(ctx context.Context, u string) ([]Recipe, er
 				cancel(errComplete)
 				return false
 			}
-			s.Logger.Info("Scraped recipe %s", recipe.Name)
+			recipeLogger.Info("scraped recipe")
 			recipes = append(recipes, recipe)
 			return true
 		})

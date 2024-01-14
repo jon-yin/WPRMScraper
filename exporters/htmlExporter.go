@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -43,12 +44,19 @@ func WithParallelism(parallelism int) HtmlExporterOption {
 	}
 }
 
+func WithLogger(logger *slog.Logger) HtmlExporterOption {
+	return func(he *HtmlExporter) {
+		he.Logger = logger
+	}
+}
+
 // HTMLExporter creates HTML file with references to recipe links
 type HtmlExporter struct {
 	template  *template.Template
 	RecipeDir string // Directory name of recipes; this is relative to DestDir, default is "recipes"
 	DestDir   string // Where to save index.html to, default is current directory
 	client    *MultiHttpClient
+	Logger    *slog.Logger // Event logger
 }
 
 type recipeTemplateData struct {
@@ -98,6 +106,7 @@ func (h *HtmlExporter) saveRecipes(ctx context.Context, recipes []scraper.Recipe
 		defer res.Body.Close()
 		recipeIndex := res.Request.Context().Value(recipeKey).(int)
 		recipe := recipes[recipeIndex]
+		h.Logger.Info("writing file", "link", res.Request.URL, "filename", recipe.ID+".html")
 		file, err := os.OpenFile(path.Join(recipesPath, recipe.ID+".html"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
 		if err != nil {
 			cancel(err)
