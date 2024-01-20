@@ -37,11 +37,10 @@ func main() {
 	jDFile := jsonCmd.String("dest", "recipes.json", "destination file for json file")
 	htmlCmd := flag.NewFlagSet("html", flag.ExitOnError)
 	hDDir := htmlCmd.String("dest", "recipes", "destination directory for recipes")
-	flag.Parse()
 	flag.Usage = usage(flag.PrintDefaults, htmlCmd.Usage, jsonCmd.Usage)
-	flag.Usage()
-
+	flag.Parse()
 	var opts []scraper.Option
+	// set up scraper
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: logLev,
 	}))
@@ -65,11 +64,7 @@ func main() {
 		logger.Error(err.Error())
 		os.Exit(1)
 	}
-	recipes, err := s.ScrapeRecipeIndex(context.TODO(), *link)
-	if err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
-	}
+	// set up exporter
 	var e exporter
 	switch os.Args[1] {
 	case "json":
@@ -86,7 +81,14 @@ func main() {
 		}
 
 	default:
+		fmt.Println("First arg", os.Args[1])
 		logger.Error(fmt.Sprintf("invalid exporter specified, valid ones are %q, %q", "json", "html"))
+		os.Exit(1)
+	}
+
+	recipes, err := s.ScrapeRecipeIndex(context.TODO(), *link)
+	if err != nil {
+		logger.Error(err.Error())
 		os.Exit(1)
 	}
 	if err := e.ExportRecipes(context.TODO(), recipes); err != nil {
