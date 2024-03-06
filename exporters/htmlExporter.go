@@ -8,33 +8,28 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"runtime"
+	"path/filepath"
 	"text/template"
 	"time"
 
 	"github.com/jon-yin/RecipeScraper/scraper"
+	"github.com/jon-yin/RecipeScraper/static"
 )
 
 type ctxKey string
 
 const (
+	recipeSubDirectory          = "recipes"
 	recipeDestFile              = "index.html"
-	recipeSrcFile               = "recipe.html"
 	recipeKey            ctxKey = "recipe_key"
 	recipeScriptTemplate        = `let recipeData = {{.Data}}`
 )
 
 type HtmlExporterOption func(*HtmlExporter)
 
-func WithRecipeDir(dir string) HtmlExporterOption {
-	return func(h *HtmlExporter) {
-		h.RecipeDir = path.Dir(dir)
-	}
-}
-
 func WithDestDir(dir string) HtmlExporterOption {
 	return func(he *HtmlExporter) {
-		he.DestDir = path.Dir(dir)
+		he.DestDir = dir
 	}
 }
 
@@ -52,11 +47,10 @@ func WithLogger(logger *slog.Logger) HtmlExporterOption {
 
 // HTMLExporter creates HTML file with references to recipe links
 type HtmlExporter struct {
-	template  *template.Template
-	RecipeDir string // Directory name of recipes; this is relative to DestDir, default is "recipes"
-	DestDir   string // Where to save index.html to, default is current directory
-	client    *MultiHttpClient
-	Logger    *slog.Logger // Event logger
+	template *template.Template
+	DestDir  string // Where to save index.html to, default is ./scrapeResults
+	client   *MultiHttpClient
+	Logger   *slog.Logger // Event logger
 }
 
 type recipeTemplateData struct {
@@ -65,8 +59,7 @@ type recipeTemplateData struct {
 
 func NewHtmlExporter(opts ...HtmlExporterOption) (*HtmlExporter, error) {
 	exporter := &HtmlExporter{
-		RecipeDir: "recipes",
-		DestDir:   ".",
+		DestDir: ".",
 		client: &MultiHttpClient{
 			Parallelism: 10,
 			Client: http.Client{
@@ -82,9 +75,8 @@ func NewHtmlExporter(opts ...HtmlExporterOption) (*HtmlExporter, error) {
 }
 
 func (h *HtmlExporter) saveRecipes(ctx context.Context, recipes []scraper.Recipe) error {
-	basePath := h.DestDir
-	recipesPath := path.Join(basePath, h.RecipeDir)
-	err := os.MkdirAll(basePath, 0666)
+	recipesPath := filepath.Join(h.DestDir, recipeSubDirectory)
+	err := os.MkdirAll(h.DestDir, 0666)
 	if err != nil {
 		return err
 	}
@@ -131,11 +123,16 @@ func (h *HtmlExporter) makeTemplateData(recipes []scraper.Recipe) (recipeTemplat
 }
 
 func (h *HtmlExporter) ExportRecipes(ctx context.Context, recipes []scraper.Recipe) error {
+	staticDir := filepath.Join(h.DestDir, "static")
+	if err := os.MkdirAll(staticDir, 0666); err != nil {
+		return err
+	}
+	// Write json data
 	err := h.saveRecipes(ctx, recipes)
 	if err != nil {
 		return err
 	}
-	scriptFile, err := os.OpenFile(path.Join(h.DestDir, "data.js"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	scriptFile, err := os.OpenFile(path.Join(staticDir, "data.js"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
@@ -148,18 +145,10 @@ func (h *HtmlExporter) ExportRecipes(ctx context.Context, recipes []scraper.Reci
 	if err != nil {
 		return err
 	}
-	_, currentFile, _, _ := runtime.Caller(0)
-	recipeFilePath := path.Join(path.Dir(currentFile), recipeSrcFile)
-	recipeFile, err := os.Open(recipeFilePath)
-	if err != nil {
+	// Write static data to destination
+	if err = static.CopyStaticResources(staticDir); err != nil {
 		return err
 	}
-	defer recipeFile.Close()
-	copiedFile, err := os.OpenFile(path.Join(h.DestDir, recipeDestFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
-	if err != nil {
-		return err
-	}
-	defer copiedFile.Close()
-	_, err = io.Copy(copiedFile, recipeFile)
-	return err
+	// Write index html file
+	return os.WriteFile(path.Join(h.DestDir, recipeDestFile), static.RecipeHtmlFile, 0666)
 }

@@ -2,6 +2,8 @@ const iframe = document.querySelector("#recipe-detail");
 
 let siteData;
 
+const MD_BREAKPOINT = 992; // Corresponds to BS's medium
+
 const recipesById = new Map();
 const recipeSortOptions = {
     "name": (recipe1, recipe2) => {
@@ -36,6 +38,24 @@ function indexRecipesById(recipes) {
     recipes.forEach(recipe => {
         recipesById.set(recipe.ID, recipe);
     })
+}
+
+function buildSearchHandler() {
+    let timeoutId;
+    return function(searchTerm) {
+        // Debounces search
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            const normTerm = normalizeString(searchTerm);
+            recipesById.forEach((v) => {
+                const normalName = normalizeString(v.Name);
+                v.isVisible = normalName.includes(normTerm) || v.Keywords.some(tag => tag.includes(normTerm)) || v.Ingredients.some(ingredient => ingredient.includes(normTerm));
+            });
+            buildRecipeLists();
+            updateRecipeCounts();
+        }, 500)
+        
+    }
 }
 
 function categorizeRecipes(recipes) {
@@ -116,24 +136,16 @@ function attachMenubarControls() {
             collapse.hide();
         });
     })
-
     const searchField = document.querySelector("#search");
     searchField.value = "";
     const clearIcon = document.querySelector("#clear");
     clearIcon.addEventListener("click", () => {
         searchField.value = "";
+        searchHandler("");
     });
-    const fireSearchQuery = searchTerm => {
-        const normTerm = normalizeString(searchTerm);
-        recipesById.forEach((v) => {
-            const normalName = normalizeString(v.Name);
-            v.isVisible = normalName.includes(normTerm) || v.Keywords.some(tag => tag.includes(normTerm)) || v.Ingredients.some(ingredient => ingredient.includes(normTerm));
-        });
-        buildRecipeLists();
-        updateRecipeCounts();
-    }
+    const searchHandler = buildSearchHandler();
     searchField.addEventListener("input", e => {
-        fireSearchQuery(e.target.value);
+        searchHandler(e.target.value);
     })
 
     const lightModeIcon = document.querySelector("#light-mode");
@@ -168,6 +180,20 @@ function attachMenubarControls() {
         dropdownButton.innerText = e.target.innerText;
         buildRecipeLists();
     });
+}
+
+function positionCanvas(width) {
+    const dismissButton = document.querySelector('#collapseOffcanvas');
+    const offcanvas = document.querySelector('#sidebar');
+    if (width < MD_BREAKPOINT) {
+        // Single column layout, reenable dismiss button + hide offcanvas
+        offcanvas.classList.remove('show');
+        dismissButton.classList.remove('d-none');
+    } else {
+        // Two column layout, make offcanvas permanent, also disable dismiss button
+        offcanvas.classList.add('show');
+        dismissButton.classList.add('d-none');
+    }
 }
 
 function listGroupClickListener(e) {
@@ -292,6 +318,21 @@ function indexRecipes(recipes) {
     categorizeRecipes(recipes);
 }
 
+function iframeLoadListener() {
+    if (iframe.src !== 'about:blank') {
+        console.log('iframe', iframe)
+        // console.log(iframe.contentDocument);
+        // iframe.contentDocument.head.appendChild(createElement({
+        //     type: 'link',
+        //     id: 'darkModeOn',
+        //     attrs: {
+        //         rel: 'stylesheet',
+        //         href: '../../../iframe_dark.css'
+        //     }
+        // }));
+    };
+}
+
 function buildSite() {
     const courseParentAccordion = document.querySelector("#byCourseAccordion")
     const courseChildAccordion = buildChildAccordion(siteData.courses);
@@ -307,6 +348,9 @@ function buildSite() {
         onClick: listGroupClickListener
     });
 
+    // add a load listener to iframe
+    iframe.addEventListener("load", iframeLoadListener);
+
     // accordion stuff
     attachToAccordion(courseParentAccordion, courseChildAccordion);
     attachToAccordion(cuisinesParentAccordion, cuisinesChildAccordion);
@@ -318,6 +362,10 @@ function buildSite() {
     const dimen = "48"; // (double the default icon size)
     feather.replace({ height: dimen, width: dimen});
     attachMenubarControls();
+    // dismiss offcanvas on click on body
+    addEventListener('resize', e => positionCanvas(window.innerWidth))
+    // Initial positioning
+    positionCanvas(window.innerWidth);
 }
 
 function idSafe(str) {
@@ -363,7 +411,7 @@ function augmentRecipeData(recipeData) {
 
 function initialize() {
     annotatedRecipeData = augmentRecipeData(recipeData);
-    iframe.src = "";
+    iframe.src = 'about:blank';
     siteData = {
         courses: {
         },
@@ -372,8 +420,7 @@ function initialize() {
         allRecipes: [],
         isDarkMode: false,
         selectedSort: "name",
-        pendingSearch: null,
-        currentSearch: ""
+        offCanvas: null
     }
     indexRecipes(annotatedRecipeData);
     buildSite();
