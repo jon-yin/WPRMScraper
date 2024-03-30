@@ -125,15 +125,19 @@ function attachMenubarControls() {
     const expandIcon = document.querySelector("#expand");
     expandIcon.addEventListener("click", () => {
         document.querySelectorAll(".collapse").forEach(elem => {
-            const collapse = bootstrap.Collapse.getOrCreateInstance(elem, { toggle: false });
-            collapse.show();
+            elem.classList.add('show');
+        });
+        document.querySelectorAll(".accordion-button").forEach(elem => {
+            elem.classList.remove('collapsed');
         });
     });
     const collapseIcon = document.querySelector("#collapse");
     collapseIcon.addEventListener("click", () => {
         document.querySelectorAll(".collapse").forEach(elem => {
-            const collapse = bootstrap.Collapse.getOrCreateInstance(elem, { toggle: false });
-            collapse.hide();
+            elem.classList.remove('show');
+        });
+        document.querySelectorAll(".accordion-button").forEach(elem => {
+            elem.classList.add('collapsed');
         });
     })
     const searchField = document.querySelector("#search");
@@ -147,27 +151,6 @@ function attachMenubarControls() {
     searchField.addEventListener("input", e => {
         searchHandler(e.target.value);
     })
-
-    const lightModeIcon = document.querySelector("#light-mode");
-    const darkModeIcon = document.querySelector("#dark-mode");
-    lightModeIcon.addEventListener("click", () => {
-        siteData.isDarkMode = false;
-        document.querySelector("html").setAttribute("data-bs-theme", "light");
-        darkModeIcon.classList.remove("d-none");
-        lightModeIcon.classList.add("d-none");
-    });
-    darkModeIcon.addEventListener("click", () => {
-        siteData.isDarkMode = true;
-        document.querySelector("html").setAttribute("data-bs-theme", "dark");
-        lightModeIcon.classList.remove("d-none");
-        darkModeIcon.classList.add("d-none");
-    });
-
-    if (siteData.isDarkMode) {
-        darkModeIcon.classList.add("d-none");
-    } else {
-        lightModeIcon.classList.add("d-none");
-    }
 
     const dropdownButton = document.querySelector("#dropdownText");
     dropdownButton.innerText = document.querySelector(`[data-sort="${siteData.selectedSort}"]`).innerText;
@@ -199,6 +182,9 @@ function positionCanvas(width) {
 function listGroupClickListener(e) {
     if (e.target.classList.contains("list-group-item")) {
         iframe.src = "./recipes/" + e.target.getAttribute("data-uuid") + ".html";
+    } else if (e.target.classList.contains('favIcon')) {
+        const favRecipe = e.target.getAttribute('data-recipe');
+        updateFavRecipes(favRecipe);
     }
 }
 
@@ -267,25 +253,41 @@ function buildChildAccordion(recipeGroups) {
     return accordion;
 }
 
-function buildRecipeLists() {
+// Rebuilds a single list group
+function buildListGroup(parentContainer, recipeIds) {
+    const listGroupItems = recipeIds
+    .map(id => recipesById.get(id))
+    .filter(recipe => recipe.isVisible)
+    .sort(recipeSortOptions[siteData.selectedSort])
+    .map(recipe => recipe.listGroupItem.cloneNode(true));
+    listGroupItems.forEach(item => {
+        const icon = item.querySelector('i');
+        const id = icon.getAttribute('data-recipe');
+        if (siteData.favRecipes[id]) {
+            icon.classList.add('fa-solid');
+        } else {
+            icon.classList.add('fa-regular');
+        }
+    })
+    parentContainer.replaceChildren(...listGroupItems);
+}
 
-    // build list groups first
-    const buildListGroup = (parentContainer, recipeIds) => {
-        const listGroupItems = recipeIds
-        .map(id => recipesById.get(id))
-        .filter(recipe => recipe.isVisible)
-        .sort(recipeSortOptions[siteData.selectedSort])
-        .map(recipe => recipe.listGroupItem.cloneNode(true));
-        parentContainer.replaceChildren(...listGroupItems);
-    }
+// Rebuilds all recipe lists
+function buildRecipeLists() {
     Object.entries(siteData.cuisines).forEach(([cuisine, {recipes: recipeIds}]) => {
-        
         buildListGroup(document.querySelector(`#${cuisine}-list-group`), recipeIds) });
 
     Object.entries(siteData.courses).forEach(([course, {recipes: recipeIds}]) => 
         buildListGroup(document.querySelector(`#${course}-list-group`), recipeIds));
 
     buildListGroup(document.querySelector('#all-list-group'), siteData.allRecipes);
+    buildListGroup(document.querySelector('#fav-list-group'), Object.keys(siteData.favRecipes));
+}
+
+function updateFavCount() {
+    const favRecipeCount =  document.querySelector('#favoriteRecipes .recipe-count');
+    const numFavRecipes = document.querySelectorAll('#collapseFavs .list-group-item');
+    favRecipeCount.innerText = `(${numFavRecipes.length})`
 }
 
 function updateRecipeCounts() {
@@ -318,19 +320,45 @@ function indexRecipes(recipes) {
     categorizeRecipes(recipes);
 }
 
-function iframeLoadListener() {
-    if (iframe.src !== 'about:blank') {
-        console.log('iframe', iframe)
-        // console.log(iframe.contentDocument);
-        // iframe.contentDocument.head.appendChild(createElement({
-        //     type: 'link',
-        //     id: 'darkModeOn',
-        //     attrs: {
-        //         rel: 'stylesheet',
-        //         href: '../../../iframe_dark.css'
-        //     }
-        // }));
-    };
+function loadFavoriteRecipes() {
+    const favs = window.localStorage.getItem("favorites");
+    if (!favs) {
+        return;
+    }
+    siteData.favRecipes = JSON.parse(favs);
+}
+
+function buildFavList() {
+    const favList = document.querySelector('#fav-list-group');
+    const recipeIds = Object.keys(siteData.favRecipes);
+    buildListGroup(favList, recipeIds);
+    updateFavCount();
+}
+
+function updateFavRecipes(recipeId) {
+    let isRemoved = false;
+    if (siteData.favRecipes[recipeId]) {
+        isRemoved = true;
+        delete siteData.favRecipes[recipeId];
+    } else {
+        siteData.favRecipes[recipeId] = true;
+    }
+    // Add to favorite list
+    window.localStorage.setItem("favorites", JSON.stringify(siteData.favRecipes));
+    // Update associated icon
+    const icons = document.querySelectorAll(`i[data-recipe="${recipeId}"]`);
+    icons.forEach(i => {
+        const heartIcon = isRemoved ? 'fa-regular' : 'fa-solid'
+        const newIcon = createElement({
+            type: 'i',
+            classes: [heartIcon, 'fa-heart', 'favIcon', 'fa-lg'],
+            attrs: {
+                "data-recipe": recipeId,
+            }
+        });
+        i.replaceWith(newIcon);
+    });
+    buildFavList();
 }
 
 function buildSite() {
@@ -348,19 +376,23 @@ function buildSite() {
         onClick: listGroupClickListener
     });
 
-    // add a load listener to iframe
-    iframe.addEventListener("load", iframeLoadListener);
+    const favRecipesAccordion = document.querySelector('#favoriteRecipes');
+    const favRecipesList = createElement({
+        type: "div",
+        classes: ["list-group"],
+        id: "fav-list-group",
+        onClick: listGroupClickListener
+    });
 
     // accordion stuff
     attachToAccordion(courseParentAccordion, courseChildAccordion);
     attachToAccordion(cuisinesParentAccordion, cuisinesChildAccordion);
     attachToAccordion(allRecipesAccordion, allRecipesList);
+    attachToAccordion(favRecipesAccordion, favRecipesList);
     buildRecipeLists();
     writeRecipeCounts();
 
     // header controls
-    const dimen = "48"; // (double the default icon size)
-    feather.replace({ height: dimen, width: dimen});
     attachMenubarControls();
     // dismiss offcanvas on click on body
     addEventListener('resize', e => positionCanvas(window.innerWidth))
@@ -395,9 +427,16 @@ function augmentRecipeData(recipeData) {
         clonedRecipe.Keywords = recipe.Keywords?.map(normalizeString) ?? [];
         clonedRecipe.Ingredients = recipe.Keywords?.map(normalizeString) ?? [];
         clonedRecipe.isVisible = true;
+        // We're creating a list entry + a fa-heart 
         clonedRecipe.listGroupItem = createElement({
             type: "a",
-            children: [`${clonedRecipe.Name} - ${clonedRecipe.Rating}★`],
+            children: [`${clonedRecipe.Name} - ${clonedRecipe.Rating}★`, createElement({
+                type: 'i',
+                classes: ['fa-heart', 'favIcon', 'fa-lg'],
+                attrs: {
+                    "data-recipe": clonedRecipe.ID,
+                }
+            })],
             attrs: {
                 "data-toggle": "list",
                 "href": "#",
@@ -418,11 +457,12 @@ function initialize() {
         cuisines: {
         },
         allRecipes: [],
-        isDarkMode: false,
+        favRecipes: {},
         selectedSort: "name",
         offCanvas: null
     }
     indexRecipes(annotatedRecipeData);
+    loadFavoriteRecipes();
     buildSite();
 }
 

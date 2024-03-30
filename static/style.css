@@ -40,14 +40,9 @@
     height: 100vh;
 }
 
-.nmIcon {
-    position: absolute;
-    right: 0%;
-}
-
 #clear {
     position: absolute;
-    right: 0%;
+    right: .25em;
     top: 50%;
     transform: translate(0, -50%);
 }
@@ -72,6 +67,20 @@
 
 #showSide {
     display: none;
+}
+
+.list-group-item {
+    padding-right: 2em;
+}
+
+.favIcon {
+    position: absolute;
+    right: .5em;
+    top: 50%;
+}
+
+.offcanvas-body {
+    overflow-y: scroll;
 }
 
 @media (max-width: 992px) {
